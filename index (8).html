@@ -1,0 +1,1252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BTC Oracle Bot v6</title>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg: #060810;
+  --surface: rgba(12,16,28,0.92);
+  --border: rgba(255,255,255,0.06);
+  --accent: #4fffb0;
+  --accent2: #ff6b6b;
+  --gold: #ffd166;
+  --muted: #3a4060;
+  --text: #c8d0e8;
+  --mono: Verdana, Geneva, sans-serif;
+  --display: Verdana, Geneva, sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--mono);
+  min-height: 100vh;
+  overflow-x: hidden;
+  position: relative;
+}
+
+/* GRID BACKGROUND */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(79,255,176,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(79,255,176,0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* GLOWING EYES */
+#bg-canvas {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.65;
+}
+
+#app {
+  position: relative;
+  z-index: 1;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+/* HEADER */
+#header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+#logo {
+  font-family: var(--display);
+  font-size: 1.1em;
+  font-weight: 800;
+  color: var(--accent);
+  letter-spacing: -0.5px;
+}
+#logo span { color: var(--text); opacity: 0.4; }
+#ws-status-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: .65em;
+  color: var(--muted);
+  letter-spacing: 1px;
+}
+#ws-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent2);
+  animation: blink 1.5s infinite;
+}
+#ws-dot.live { background: var(--accent); animation: none; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.2} }
+
+/* TOP ROW */
+#top-row {
+  display: grid;
+  grid-template-columns: 200px 1fr 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+/* TIMER */
+#timer-block {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  backdrop-filter: blur(12px);
+}
+#window-label {
+  font-size: .58em;
+  color: var(--muted);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+#countdown {
+  font-family: var(--display);
+  font-size: 4em;
+  font-weight: 800;
+  color: var(--accent);
+  line-height: 1;
+  letter-spacing: -2px;
+  text-shadow: 0 0 30px rgba(79,255,176,0.4);
+  transition: color .3s, text-shadow .3s;
+}
+#countdown.locked { color: var(--gold); text-shadow: 0 0 30px rgba(255,209,102,0.4); }
+#countdown.urgent { color: var(--accent2); text-shadow: 0 0 30px rgba(255,107,107,0.4); }
+
+/* CARDS */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px 20px;
+  backdrop-filter: blur(12px);
+  position: relative;
+  overflow: hidden;
+}
+.card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(79,255,176,0.2), transparent);
+}
+.card-label {
+  font-size: .58em;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+.card-value {
+  font-family: var(--display);
+  font-size: 1.9em;
+  font-weight: 800;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -1px;
+}
+.card-value.up { color: var(--accent); }
+.card-value.down { color: var(--accent2); }
+#delta { font-size: .75em; margin-top: 6px; color: var(--muted); font-weight: 700; }
+
+/* PREDICTION CARD */
+#pred-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px 20px;
+  backdrop-filter: blur(12px);
+  transition: all .4s;
+  position: relative;
+  overflow: hidden;
+}
+#pred-card.up {
+  border-color: rgba(79,255,176,0.4);
+  background: rgba(79,255,176,0.05);
+  box-shadow: 0 0 30px rgba(79,255,176,0.08);
+}
+#pred-card.down {
+  border-color: rgba(255,107,107,0.4);
+  background: rgba(255,107,107,0.05);
+  box-shadow: 0 0 30px rgba(255,107,107,0.08);
+}
+#pred-card.locked::after {
+  content: 'LOCKED';
+  position: absolute;
+  top: 10px; right: 12px;
+  font-size: .55em;
+  letter-spacing: 2px;
+  color: var(--gold);
+  font-weight: 700;
+}
+#pred-dir {
+  font-family: var(--display);
+  font-size: 1.9em;
+  font-weight: 800;
+  letter-spacing: -1px;
+  margin-bottom: 4px;
+}
+#pred-conf { font-size: .8em; color: var(--muted); }
+
+/* ORACLE PRICE BADGE */
+#oracle-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 8px 14px;
+  background: rgba(79,255,176,0.05);
+  border: 1px solid rgba(79,255,176,0.15);
+  border-radius: 8px;
+  font-size: .7em;
+  color: var(--accent);
+  letter-spacing: 1px;
+}
+#oracle-price { font-weight: 700; font-family: var(--display); font-size: 1.2em; }
+#oracle-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); animation: pulse-dot 1s infinite; }
+@keyframes pulse-dot { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(1.4)} }
+
+/* BET SIGNAL */
+#bet-signal-wrap { text-align: center; margin-bottom: 12px; }
+#bet-signal {
+  font-family: var(--display);
+  font-size: .95em;
+  font-weight: 700;
+  padding: 10px 28px;
+  border-radius: 6px;
+  display: inline-block;
+  letter-spacing: 1px;
+  transition: all .3s;
+}
+#bet-signal.waiting { background: rgba(58,64,96,.4); color: var(--muted); border: 1px solid var(--border); }
+#bet-signal.bet-now { background: rgba(79,255,176,.12); color: var(--accent); border: 1px solid var(--accent); animation: pulse-glow 1s infinite; }
+#bet-signal.locked  { background: rgba(255,209,102,.08); color: var(--gold); border: 1px solid rgba(255,209,102,.3); }
+#bet-signal.skip    { background: rgba(255,107,107,.08); color: var(--accent2); border: 1px solid rgba(255,107,107,.3); }
+#bet-signal.closing { background: rgba(255,107,107,.08); color: var(--accent2); border: 1px solid rgba(255,107,107,.3); }
+@keyframes pulse-glow {
+  0%,100% { box-shadow: 0 0 0 0 rgba(79,255,176,.4); }
+  50%      { box-shadow: 0 0 0 8px rgba(79,255,176,0); }
+}
+
+/* RECHECK */
+#recheck-card {
+  display: none; margin-bottom: 12px;
+  border-radius: 12px; padding: 16px 20px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  backdrop-filter: blur(12px);
+  transition: all .3s;
+}
+#recheck-card.double { border-color: rgba(79,255,176,.4); background: rgba(79,255,176,.05); }
+#recheck-card.hold   { border-color: rgba(255,209,102,.4); background: rgba(255,209,102,.04); }
+#recheck-card.hedge  { border-color: rgba(255,107,107,.4); background: rgba(255,107,107,.05); }
+#recheck-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+#recheck-title  { font-size: .58em; text-transform: uppercase; letter-spacing: 2px; color: var(--muted); }
+#recheck-timer  { font-size: .58em; color: var(--muted); }
+#recheck-action { font-family: var(--display); font-size: 1.5em; font-weight: 800; margin-bottom: 4px; }
+#recheck-reason { font-size: .78em; opacity: .7; line-height: 1.6; }
+
+/* SIGNALS — 4 indicators now */
+#signals-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.sig-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  backdrop-filter: blur(12px);
+  position: relative;
+  overflow: hidden;
+}
+.sig-card.active-bull { border-color: rgba(79,255,176,0.3); }
+.sig-card.active-bear { border-color: rgba(255,107,107,0.3); }
+.sig-name  { font-size: .55em; text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); margin-bottom: 6px; }
+.sig-value { font-family: var(--display); font-size: 1em; font-weight: 700; margin-bottom: 6px; }
+.sig-value.bull { color: var(--accent); }
+.sig-value.bear { color: var(--accent2); }
+.sig-value.neut { color: var(--muted); }
+.sig-weight { font-size: .55em; color: var(--muted); margin-bottom: 6px; }
+.sig-bar { height: 2px; border-radius: 1px; background: rgba(255,255,255,0.05); overflow: hidden; }
+.sig-bar-fill { height: 100%; border-radius: 1px; position: absolute; left: 50%; transform: translateX(-50%); transition: width .4s; }
+
+/* CHART */
+#chart-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px 20px;
+  margin-bottom: 12px;
+  backdrop-filter: blur(12px);
+}
+#chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+#chart-title { font-size: .58em; text-transform: uppercase; letter-spacing: 2px; color: var(--muted); }
+#chart-legend { display: flex; gap: 14px; font-size: .58em; color: var(--muted); }
+.legend-item { display: flex; align-items: center; gap: 5px; }
+.legend-dot { width: 6px; height: 6px; border-radius: 50%; }
+#chart-wrap { height: 200px; }
+
+/* STATS */
+#stats-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px 20px;
+  backdrop-filter: blur(12px);
+}
+#stats-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+#stats-title { font-size: .58em; text-transform: uppercase; letter-spacing: 2px; color: var(--muted); }
+.clear-btn { font-size: .58em; padding: 4px 10px; background: rgba(255,107,107,.08); border: 1px solid rgba(255,107,107,.2); border-radius: 4px; color: var(--accent2); cursor: pointer; letter-spacing: 1px; }
+#stats-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin-bottom: 18px; }
+.stat { text-align: center; padding: 14px; background: rgba(0,0,0,0.3); border-radius: 8px; border: 1px solid var(--border); }
+.stat-v { font-family: var(--display); font-size: 1.6em; font-weight: 800; color: var(--accent); font-variant-numeric: tabular-nums; }
+.stat-l { font-size: .58em; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-top: 5px; }
+#band-table { width: 100%; border-collapse: collapse; font-size: .78em; }
+#band-table th { color: var(--muted); font-size: .6em; text-transform: uppercase; letter-spacing: 1px; padding: 6px 10px; text-align: left; font-weight: 400; }
+#band-table td { padding: 9px 10px; border-top: 1px solid var(--border); }
+.band-label-head { font-size: .58em; text-transform: uppercase; letter-spacing: 2px; color: var(--muted); margin-bottom: 10px; }
+
+/* PREV CANDLE INDICATOR */
+#prev-candle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: rgba(0,0,0,0.2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: .68em;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+#prev-candle-val { font-weight: 700; }
+
+@media(max-width:700px){
+  #top-row{grid-template-columns:1fr 1fr}
+  #timer-block{grid-column:1/-1}
+  #signals-grid{grid-template-columns:repeat(2,1fr)}
+  #stats-grid{grid-template-columns:repeat(2,1fr)}
+}
+</style>
+</head>
+<body>
+<canvas id="bg-canvas"></canvas>
+<div id="app">
+
+  <div id="header">
+    <div id="logo">BTC<span>/</span>ORACLE <span style="color:var(--accent);opacity:1">v6</span></div>
+    <div id="ws-status-bar">
+      <div id="ws-dot"></div>
+      <span id="ws-status">Connecting...</span>
+    </div>
+  </div>
+
+  <!-- ORACLE PRICE BADGE -->
+  <div id="oracle-badge">
+    <div id="oracle-dot"></div>
+    <span>CHAINLINK ORACLE</span>
+    <span id="oracle-price">--</span>
+    <span style="color:var(--muted);margin-left:auto;font-size:.85em">Settlement price · Same as Polymarket</span>
+  </div>
+
+  <!-- TOP ROW -->
+  <div id="top-row">
+    <div id="timer-block">
+      <div id="window-label">ET Window</div>
+      <div id="countdown">5:00</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Candle Open</div>
+      <div class="card-value" id="start-p">--</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Oracle Now</div>
+      <div class="card-value" id="cur-p">--</div>
+      <div id="delta">--</div>
+      <div id="bybit-spread" style="font-size:.6em;margin-top:4px;color:var(--muted)"></div>
+    </div>
+    <div id="pred-card">
+      <div class="card-label">Prediction</div>
+      <div id="pred-dir">--</div>
+      <div id="pred-conf">Initializing...</div>
+    </div>
+  </div>
+
+  <!-- PREV CANDLE -->
+  <div id="prev-candle">
+    <span>PREV CANDLE:</span>
+    <span id="prev-candle-val">Waiting for first close...</span>
+    <span id="prev-candle-pct" style="margin-left:auto"></span>
+  </div>
+
+  <!-- BET SIGNAL -->
+  <div id="bet-signal-wrap"><div id="bet-signal" class="waiting">⏳ Gathering signals...</div></div>
+
+  <!-- RECHECK -->
+  <div id="recheck-card">
+    <div id="recheck-header"><div id="recheck-title">⏱ 1-Min Recheck</div><div id="recheck-timer"></div></div>
+    <div id="recheck-action">--</div>
+    <div id="recheck-reason">--</div>
+  </div>
+
+  <!-- 4 SIGNALS -->
+  <div id="signals-grid">
+    <div class="sig-card" id="sc-chainlink">
+      <div class="sig-name">Chainlink Momentum</div>
+      <div class="sig-value neut" id="sig-chainlink">--</div>
+      <div class="sig-weight">Weight 30%</div>
+      <div class="sig-bar"><div class="sig-bar-fill" id="bar-chainlink" style="width:0%"></div></div>
+    </div>
+    <div class="sig-card" id="sc-cvd">
+      <div class="sig-name">Smart CVD (>0.5 BTC)</div>
+      <div class="sig-value neut" id="sig-cvd">--</div>
+      <div class="sig-weight">Weight 25%</div>
+      <div class="sig-bar"><div class="sig-bar-fill" id="bar-cvd" style="width:0%"></div></div>
+    </div>
+    <div class="sig-card" id="sc-prev">
+      <div class="sig-name">Prev Candle</div>
+      <div class="sig-value neut" id="sig-prev">--</div>
+      <div class="sig-weight">Weight 25%</div>
+      <div class="sig-bar"><div class="sig-bar-fill" id="bar-prev" style="width:0%"></div></div>
+    </div>
+    <div class="sig-card" id="sc-momentum">
+      <div class="sig-name">Intra-Candle Momentum</div>
+      <div class="sig-value neut" id="sig-momentum">--</div>
+      <div class="sig-weight">Weight 20%</div>
+      <div class="sig-bar"><div class="sig-bar-fill" id="bar-momentum" style="width:0%"></div></div>
+    </div>
+  </div>
+
+  <!-- CHART -->
+  <div id="chart-card">
+    <div id="chart-header">
+      <div id="chart-title">Price Feed</div>
+      <div id="chart-legend">
+        <div class="legend-item"><div class="legend-dot" style="background:var(--accent)"></div>Chainlink Oracle</div>
+        <div class="legend-item"><div class="legend-dot" style="background:rgba(79,255,176,0.3)"></div>Bybit</div>
+      </div>
+    </div>
+    <div id="chart-wrap"><canvas id="myChart"></canvas></div>
+  </div>
+
+  <!-- STATS -->
+  <div id="stats-card">
+    <div id="stats-head">
+      <div id="stats-title">Performance</div>
+      <button class="clear-btn" onclick="clearHistory()">CLEAR HISTORY</button>
+    </div>
+    <div id="stats-grid">
+      <div class="stat"><div class="stat-v" id="s-total">0</div><div class="stat-l">Candles Watched</div></div>
+      <div class="stat"><div class="stat-v" id="s-wl">--</div><div class="stat-l">Bets W-L</div></div>
+      <div class="stat"><div class="stat-v" id="s-rate">--%</div><div class="stat-l">Bet Win Rate</div></div>
+      <div class="stat"><div class="stat-v" id="s-streak">--</div><div class="stat-l">Bet Streak</div></div>
+    </div>
+    <div class="band-label-head">Win Rate by Confidence Band</div>
+    <table id="band-table">
+      <thead><tr><th>Band</th><th>Action</th><th>Bets</th><th>W-L</th><th>Win Rate</th><th style="width:80px">Bar</th></tr></thead>
+      <tbody id="band-rows"></tbody>
+    </table>
+  </div>
+
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════
+//  DEEP SPACE NEBULA BACKGROUND
+// ═══════════════════════════════════════════════════════
+(function(){
+  const c = document.getElementById('bg-canvas');
+  const ctx = c.getContext('2d');
+  function resize(){ c.width = window.innerWidth; c.height = window.innerHeight; }
+  resize(); window.addEventListener('resize', resize);
+
+  // Stars — three layers for parallax depth
+  const starLayers = [
+    Array.from({length:180}, () => ({ x:Math.random(), y:Math.random(), r:Math.random()*0.6+0.1, alpha:Math.random()*0.6+0.1, twinkle:Math.random()*Math.PI*2, speed:0.003+Math.random()*0.01 })),
+    Array.from({length:80},  () => ({ x:Math.random(), y:Math.random(), r:Math.random()*1.0+0.4, alpha:Math.random()*0.5+0.2, twinkle:Math.random()*Math.PI*2, speed:0.006+Math.random()*0.015 })),
+    Array.from({length:25},  () => ({ x:Math.random(), y:Math.random(), r:Math.random()*1.8+0.8, alpha:Math.random()*0.4+0.3, twinkle:Math.random()*Math.PI*2, speed:0.012+Math.random()*0.02 })),
+  ];
+
+  // Nebula clouds — soft gaseous blobs
+  const nebulaClouds = [
+    { x:0.22, y:0.30, rx:0.28, ry:0.22, color:[80,20,140],  alpha:0.045, rotation:0.3  },
+    { x:0.72, y:0.25, rx:0.32, ry:0.18, color:[20,60,160],  alpha:0.04,  rotation:-0.2 },
+    { x:0.50, y:0.55, rx:0.25, ry:0.30, color:[140,30,100], alpha:0.035, rotation:0.5  },
+    { x:0.15, y:0.65, rx:0.20, ry:0.20, color:[30,100,180], alpha:0.03,  rotation:0.1  },
+    { x:0.80, y:0.60, rx:0.24, ry:0.22, color:[100,20,160], alpha:0.04,  rotation:-0.4 },
+    { x:0.40, y:0.15, rx:0.30, ry:0.15, color:[20,80,140],  alpha:0.025, rotation:0.2  },
+  ];
+
+  // Shooting stars
+  const shooters = Array.from({length:3}, () => createShooter());
+  function createShooter(){
+    return { x: Math.random(), y: Math.random()*0.5, vx: 0.004+Math.random()*0.006, vy: 0.001+Math.random()*0.003, len: 0.06+Math.random()*0.12, alpha: 0, life: 0, maxLife: 60+Math.random()*80, delay: Math.random()*400 };
+  }
+
+  // Cosmic dust — tiny drifting motes
+  const dust = Array.from({length:60}, () => ({
+    x:Math.random(), y:Math.random(),
+    vx:(Math.random()-.5)*0.00008, vy:(Math.random()-.5)*0.00006,
+    r:0.3+Math.random()*0.7, alpha:0.03+Math.random()*0.08,
+    hue: Math.random() > 0.5 ? 220 : 280,
+  }));
+
+  let t = 0, frame = 0;
+
+  function drawNebula(cloud, W, H){
+    ctx.save();
+    const cx = cloud.x * W, cy = cloud.y * H;
+    const rx = cloud.rx * W, ry = cloud.ry * H;
+    ctx.translate(cx, cy);
+    ctx.rotate(cloud.rotation);
+
+    // Multi-layer soft glow for each cloud
+    for(let layer = 3; layer >= 0; layer--){
+      const scale = 1 + layer * 0.5;
+      const alpha = cloud.alpha * (1 - layer * 0.22);
+      const grad = ctx.createRadialGradient(0,0,0,0,0,rx*scale);
+      const [r,g,b] = cloud.color;
+      grad.addColorStop(0,   `rgba(${r},${g},${b},${alpha})`);
+      grad.addColorStop(0.4, `rgba(${r},${g},${b},${alpha*0.6})`);
+      grad.addColorStop(0.75,`rgba(${r},${g},${b},${alpha*0.2})`);
+      grad.addColorStop(1,   `rgba(${r},${g},${b},0)`);
+      ctx.save();
+      ctx.scale(1, ry/rx);
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(0, 0, rx*scale, 0, Math.PI*2);
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  function drawStarLayer(layer, W, H){
+    for(const s of layer){
+      s.twinkle += s.speed;
+      const brightness = 0.5 + Math.sin(s.twinkle) * 0.5;
+      const a = s.alpha * brightness;
+      // Core
+      ctx.beginPath();
+      ctx.arc(s.x*W, s.y*H, s.r, 0, Math.PI*2);
+      ctx.fillStyle = `rgba(255,255,255,${a})`;
+      ctx.fill();
+      // Glow on brighter stars
+      if(s.r > 1.0){
+        const glow = ctx.createRadialGradient(s.x*W,s.y*H,0,s.x*W,s.y*H,s.r*5);
+        glow.addColorStop(0,`rgba(180,210,255,${a*0.4})`);
+        glow.addColorStop(1,'rgba(0,0,0,0)');
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(s.x*W,s.y*H,s.r*5,0,Math.PI*2);
+        ctx.fill();
+        // Cross diffraction spike on very bright stars
+        if(s.r > 1.5){
+          ctx.save();
+          ctx.globalAlpha = a * 0.25;
+          ctx.strokeStyle = 'rgba(200,220,255,1)';
+          ctx.lineWidth = 0.5;
+          ctx.beginPath();
+          ctx.moveTo(s.x*W - s.r*8, s.y*H);
+          ctx.lineTo(s.x*W + s.r*8, s.y*H);
+          ctx.moveTo(s.x*W, s.y*H - s.r*8);
+          ctx.lineTo(s.x*W, s.y*H + s.r*8);
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+    }
+  }
+
+  function drawShooters(W, H){
+    for(let i = 0; i < shooters.length; i++){
+      const s = shooters[i];
+      if(s.delay > 0){ s.delay--; continue; }
+      s.life++;
+      // Fade in then out
+      const progress = s.life / s.maxLife;
+      s.alpha = progress < 0.2 ? progress/0.2 : progress > 0.7 ? (1-progress)/0.3 : 1;
+      s.x += s.vx; s.y += s.vy;
+      if(s.life >= s.maxLife || s.x > 1.1){
+        shooters[i] = createShooter();
+        shooters[i].delay = 200 + Math.random()*600;
+        continue;
+      }
+      const sx = s.x*W, sy = s.y*H;
+      const ex = sx - Math.cos(Math.atan2(s.vy,s.vx))*s.len*W;
+      const ey = sy - Math.sin(Math.atan2(s.vy,s.vx))*s.len*W;
+      const grad = ctx.createLinearGradient(ex,ey,sx,sy);
+      grad.addColorStop(0,'rgba(255,255,255,0)');
+      grad.addColorStop(0.7,`rgba(200,230,255,${s.alpha*0.4})`);
+      grad.addColorStop(1,`rgba(255,255,255,${s.alpha*0.9})`);
+      ctx.beginPath();
+      ctx.moveTo(ex,ey); ctx.lineTo(sx,sy);
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = 1.2;
+      ctx.lineCap = 'round';
+      ctx.stroke();
+      // Head glow
+      ctx.beginPath();
+      ctx.arc(sx,sy,1.5,0,Math.PI*2);
+      ctx.fillStyle = `rgba(255,255,255,${s.alpha*0.9})`;
+      ctx.fill();
+    }
+  }
+
+  function draw(){
+    const W = c.width, H = c.height;
+    ctx.clearRect(0,0,W,H);
+
+    // Deep space base — not pure black, has subtle colour
+    const base = ctx.createRadialGradient(W*0.5,H*0.4,0,W*0.5,H*0.5,W*0.8);
+    base.addColorStop(0,  'rgba(8,10,28,1)');
+    base.addColorStop(0.5,'rgba(4,6,18,1)');
+    base.addColorStop(1,  'rgba(2,3,10,1)');
+    ctx.fillStyle = base;
+    ctx.fillRect(0,0,W,H);
+
+    // Milky way band — subtle diagonal luminosity
+    const milky = ctx.createLinearGradient(0,H*0.2,W,H*0.8);
+    milky.addColorStop(0,'rgba(0,0,0,0)');
+    milky.addColorStop(0.3,'rgba(40,30,80,0.06)');
+    milky.addColorStop(0.5,'rgba(60,40,100,0.08)');
+    milky.addColorStop(0.7,'rgba(40,30,80,0.05)');
+    milky.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle = milky;
+    ctx.fillRect(0,0,W,H);
+
+    // Nebula clouds
+    for(const cloud of nebulaClouds) drawNebula(cloud, W, H);
+
+    // Cosmic dust
+    for(const d of dust){
+      d.x += d.vx; d.y += d.vy;
+      if(d.x<0)d.x=1;if(d.x>1)d.x=0;if(d.y<0)d.y=1;if(d.y>1)d.y=0;
+      ctx.beginPath();
+      ctx.arc(d.x*W,d.y*H,d.r,0,Math.PI*2);
+      ctx.fillStyle=`hsla(${d.hue},60%,80%,${d.alpha})`;
+      ctx.fill();
+    }
+
+    // Stars — back to front
+    for(const layer of starLayers) drawStarLayer(layer, W, H);
+
+    // Shooting stars
+    drawShooters(W, H);
+
+    t += 0.016; frame++;
+    requestAnimationFrame(draw);
+  }
+  draw();
+})();
+
+// ═══════════════════════════════════════════════════════
+//  HELPERS
+// ═══════════════════════════════════════════════════════
+function fmtP(n){return'$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function fmtD(n){const s=n>=0?'+':'';return s+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function getET(){const now=new Date();return new Date(now.getTime()+now.getTimezoneOffset()*60000-5*3600000);}
+function getCandleEndMs(){const et=getET();const si=(et.getUTCMinutes()%5)*60+et.getUTCSeconds();return Date.now()+(300-si)*1000-et.getUTCMilliseconds();}
+function getWindowLabel(){const et=getET();const h=et.getUTCHours(),m=et.getUTCMinutes();const s0=Math.floor(m/5)*5,s1=s0+5;const f=(hh,mm)=>{const ap=hh>=12?'PM':'AM';return`${hh%12||12}:${(mm>=60?0:mm).toString().padStart(2,'0')} ${ap}`};return`${f(h,s0)} – ${f(s1>=60?h+1:h,s1)} ET`;}
+
+// ═══════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════
+let startPrice=null, candleEndMs=null;
+let bybitPrice=null, chainlinkPrice=null;
+let closing=false, predLocked=false, lockedPred=null;
+let bybitHistory=[], chainlinkHistory=[], chartObj=null;
+
+// Smart CVD — only trades > 0.5 BTC
+let smartCVD = 0;
+
+// Previous candle data
+let prevCandle = null; // { open, close, direction, pctMove }
+
+// Chainlink momentum — track last N chainlink prices within candle
+let chainlinkCandle = []; // prices within current candle
+
+let predictions = [], bestBid=null, bestBidSize=null, bestAsk=null, bestAskSize=null;
+
+// ═══════════════════════════════════════════════════════
+//  TAB SYNC
+// ═══════════════════════════════════════════════════════
+const ch = (() => { try { return new BroadcastChannel('btc_bot_v6'); } catch(e) { return { postMessage:()=>{}, onmessage:null }; } })();
+let isMaster = true; // Always master — no election needed
+let masterSeen = 0;
+
+function electMaster(){
+  // Always become master immediately — connect right away
+  isMaster = true;
+  document.getElementById('ws-status').textContent = 'Connecting...';
+  connectBybit();
+  connectPolymarketOracle();
+  setInterval(broadcastState, 200);
+
+  // Still listen for other tabs to sync to us
+  ch.onmessage = e => {
+    const msg = e.data;
+    if(msg.type==='PING') ch.postMessage({type:'PONG'});
+    if(msg.type==='STATE' && false){ /* we are always master */ }
+  };
+}
+
+function broadcastState(){
+  if(!isMaster)return;
+  ch.postMessage({type:'STATE',state:{
+    startPrice,bybitPrice,chainlinkPrice,candleEndMs,predLocked,lockedPred,
+    bybitHistory:bybitHistory.slice(-120),chainlinkHistory:chainlinkHistory.slice(-120),
+    chainlinkCandle:chainlinkCandle.slice(-60),
+    smartCVD,prevCandle,bestBid,bestBidSize,bestAsk,bestAskSize,predictions
+  }});
+}
+
+// ═══════════════════════════════════════════════════════
+//  INDICATORS — V6 MODEL
+// ═══════════════════════════════════════════════════════
+
+// 1. CHAINLINK MOMENTUM (30%)
+// Measures direction and conviction of Chainlink price movement within candle
+function calcChainlinkMomentum(){
+  if(!startPrice||chainlinkCandle.length<5)return null;
+  const latest=chainlinkCandle[chainlinkCandle.length-1];
+  const pct=(latest-startPrice)/startPrice*100;
+  // Also check recent trend within candle
+  const recent=chainlinkCandle.slice(-10);
+  const recentDelta=recent.length>1?(recent[recent.length-1]-recent[0])/recent[0]*100:0;
+  const combined=(pct*0.6)+(recentDelta*0.4);
+  return{pct,recentDelta,combined};
+}
+
+// 2. SMART CVD — only trades > 0.5 BTC (25%)
+// Already accumulated in smartCVD variable
+
+// 3. PREVIOUS CANDLE (25%)
+// Direction + strength of last candle
+function calcPrevSignal(){
+  if(!prevCandle)return null;
+  return prevCandle;
+}
+
+// 4. INTRA-CANDLE MOMENTUM (20%)
+// Is price trending within first 60s in a consistent direction?
+function calcIntraCandle(){
+  if(!startPrice||chainlinkCandle.length<3)return null;
+  // Look at last 15 chainlink readings
+  const slice=chainlinkCandle.slice(-15);
+  let ups=0,downs=0;
+  for(let i=1;i<slice.length;i++){
+    if(slice[i]>slice[i-1])ups++;
+    else if(slice[i]<slice[i-1])downs++;
+  }
+  const total=ups+downs;
+  if(!total)return null;
+  const bias=(ups-downs)/total; // -1 to +1
+  return{ups,downs,bias};
+}
+
+// OBI for recheck
+function calcOBI(){
+  if(!bestBid||!bestBidSize||!bestAsk||!bestAskSize)return 0;
+  const t=bestBidSize+bestAskSize;return t?(bestBidSize-bestAskSize)/t:0;
+}
+
+// ═══════════════════════════════════════════════════════
+//  PREDICTION ENGINE
+// ═══════════════════════════════════════════════════════
+function computePrediction(){
+  if(!startPrice||!chainlinkPrice)return null;
+  let up=0,dn=0;const bd={};
+
+  // 1. CHAINLINK MOMENTUM 30%
+  const clm=calcChainlinkMomentum();
+  if(clm){
+    const strength=Math.min(Math.abs(clm.combined)/0.05,1); // 0.05% = max signal
+    if(clm.combined>0.005){
+      up+=30*strength;
+      bd.chainlink={label:`▲ +${clm.combined.toFixed(3)}%`,cls:'bull',raw:strength};
+    } else if(clm.combined<-0.005){
+      dn+=30*strength;
+      bd.chainlink={label:`▼ ${clm.combined.toFixed(3)}%`,cls:'bear',raw:strength};
+    } else {
+      bd.chainlink={label:'— Flat',cls:'neut',raw:0};
+    }
+  } else {
+    bd.chainlink={label:'Building...',cls:'neut',raw:0};
+  }
+
+  // 2. SMART CVD 25%
+  const cvdN=Math.min(Math.abs(smartCVD)/20,1);
+  if(smartCVD>2){
+    up+=25*cvdN;
+    bd.cvd={label:`▲ +${smartCVD.toFixed(1)} BTC`,cls:'bull',raw:cvdN};
+  } else if(smartCVD<-2){
+    dn+=25*cvdN;
+    bd.cvd={label:`▼ ${smartCVD.toFixed(1)} BTC`,cls:'bear',raw:cvdN};
+  } else {
+    bd.cvd={label:`— ${smartCVD.toFixed(1)} BTC`,cls:'neut',raw:0};
+  }
+
+  // 3. PREV CANDLE 25%
+  const prev=calcPrevSignal();
+  if(prev){
+    const strength=Math.min(Math.abs(prev.pctMove)/0.15,1); // 0.15% = strong candle
+    if(prev.direction==='UP'&&strength>0.2){
+      up+=25*strength;
+      bd.prev={label:`▲ Cont. ${prev.pctMove.toFixed(3)}%`,cls:'bull',raw:strength};
+    } else if(prev.direction==='DOWN'&&strength>0.2){
+      dn+=25*strength;
+      bd.prev={label:`▼ Cont. ${prev.pctMove.toFixed(3)}%`,cls:'bear',raw:strength};
+    } else {
+      bd.prev={label:'— Weak/Chop',cls:'neut',raw:0};
+    }
+  } else {
+    bd.prev={label:'First candle',cls:'neut',raw:0};
+  }
+
+  // 4. INTRA-CANDLE MOMENTUM 20%
+  const intra=calcIntraCandle();
+  if(intra){
+    const strength=Math.abs(intra.bias);
+    if(intra.bias>0.3){
+      up+=20*strength;
+      bd.momentum={label:`▲ ${Math.round(intra.ups/(intra.ups+intra.downs)*100)}% up ticks`,cls:'bull',raw:strength};
+    } else if(intra.bias<-0.3){
+      dn+=20*strength;
+      bd.momentum={label:`▼ ${Math.round(intra.downs/(intra.ups+intra.downs)*100)}% down ticks`,cls:'bear',raw:strength};
+    } else {
+      bd.momentum={label:'— Mixed ticks',cls:'neut',raw:0};
+    }
+  } else {
+    bd.momentum={label:'Building...',cls:'neut',raw:0};
+  }
+
+  const total=up+dn;if(!total)return null;
+  return{dir:up>=dn?'UP':'DOWN',conf:Math.round(Math.max(up,dn)/total*100),breakdown:bd};
+}
+
+// ═══════════════════════════════════════════════════════
+//  CANDLE
+// ═══════════════════════════════════════════════════════
+function openCandle(price){
+  startPrice=price;candleEndMs=getCandleEndMs();
+  closing=false;predLocked=false;lockedPred=null;
+  smartCVD=0;chainlinkCandle=[];
+  document.getElementById('window-label').textContent=getWindowLabel();
+  document.getElementById('start-p').textContent=fmtP(price);
+  document.getElementById('pred-card').classList.remove('locked','up','down');
+  document.getElementById('recheck-card').style.display='none';
+  console.log(`🆕 Candle | ${fmtP(price)} | ${getWindowLabel()}`);
+}
+
+function closeCandle(){
+  if(closing||!startPrice||!chainlinkPrice)return;
+  closing=true;
+  const closePrice=chainlinkPrice;
+  const actual=closePrice>=startPrice?'UP':'DOWN';
+  const pctMove=(closePrice-startPrice)/startPrice*100;
+  // Save prev candle
+  prevCandle={open:startPrice,close:closePrice,direction:actual,pctMove};
+  const pred=lockedPred||computePrediction();
+  const won=pred&&pred.dir===actual;
+  predictions.push({startPrice,endPrice:closePrice,pred,actual,won,ts:Date.now()});
+  savePredictions();updateStats();updateBandTable();updatePrevCandle();
+  console.log(`✅ ${fmtP(startPrice)}→${fmtP(closePrice)} | pred=${pred?.dir} actual=${actual} ${won?'WIN ✅':'LOSS ❌'}`);
+  setTimeout(()=>openCandle(chainlinkPrice||bybitPrice),400);
+}
+
+// ═══════════════════════════════════════════════════════
+//  BANDS + RECHECK
+// ═══════════════════════════════════════════════════════
+const BANDS=[
+  {min:90,max:100,label:'90–100%',action:'🔥 SLAM IT',color:'#4fffb0'},
+  {min:75,max:89, label:'75–89%', action:'✅ STRONG BET',color:'#a8ffdc'},
+  {min:65,max:74, label:'65–74%', action:'⚡ BET (½)',color:'#ffd166'},
+  {min:55,max:64, label:'55–64%', action:'⛔ SKIP',color:'#ff6b6b'},
+  {min:0, max:54, label:'<55%',   action:'⛔ HARD SKIP',color:'#4a5580'},
+];
+function getBand(c){return BANDS.find(b=>c>=b.min&&c<=b.max)||BANDS[BANDS.length-1]}
+
+function computeRecheck(){
+  if(!lockedPred||!startPrice||!chainlinkPrice)return null;
+  const obi=calcOBI();
+  const diff=chainlinkPrice-startPrice;
+  const lockedDir=lockedPred.dir;
+  let conf=0,flip=0;const reasons=[];
+  // Smart CVD
+  if(lockedDir==='UP'){if(smartCVD>2)conf+=3;else if(smartCVD<-2){flip+=3;reasons.push('smart CVD flipped bearish')}else conf+=1;}
+  else{if(smartCVD<-2)conf+=3;else if(smartCVD>2){flip+=3;reasons.push('smart CVD flipped bullish')}else conf+=1;}
+  // Chainlink momentum
+  const clm=calcChainlinkMomentum();
+  if(clm){
+    if(lockedDir==='UP'&&clm.combined>0)conf+=2;
+    else if(lockedDir==='UP'&&clm.combined<-0.01){flip+=2;reasons.push('oracle trending down')}
+    else if(lockedDir==='DOWN'&&clm.combined<0)conf+=2;
+    else if(lockedDir==='DOWN'&&clm.combined>0.01){flip+=2;reasons.push('oracle trending up')}
+  }
+  // Price vs start
+  const pp=Math.abs(diff)/startPrice*100;
+  if(lockedDir==='UP'){if(diff>0)conf+=2;else{flip+=(pp>.02?3:1);if(pp>.02)reasons.push(`oracle fell $${Math.abs(diff).toFixed(0)} below start`);}}
+  else{if(diff<0)conf+=2;else{flip+=(pp>.02?3:1);if(pp>.02)reasons.push(`oracle rose $${Math.abs(diff).toFixed(0)} above start`);}}
+  // OBI
+  if(lockedDir==='UP'){if(obi>.1)conf+=1;else if(obi<-.1){flip+=1;}}
+  else{if(obi<-.1)conf+=1;else if(obi>.1){flip+=1;}}
+  const total=conf+flip,r=total>0?flip/total:0;
+  if(r>=.6)return{label:'🚨 HEDGE / EXIT',cls:'hedge',reason:`${reasons.slice(0,2).join(', ')}. Consider early cash-out if >60¢ offered.`};
+  if(r<=.25&&conf>=4)return{label:'🔥 DOUBLE DOWN',cls:'double',reason:`All signals still confirming ${lockedDir}. Strong conviction.`};
+  return{label:'✋ HOLD',cls:'hold',reason:`Mixed but original ${lockedDir} still valid. Stay in.`};
+}
+
+// ═══════════════════════════════════════════════════════
+//  TICK
+// ═══════════════════════════════════════════════════════
+function tick(){
+  const latestPrice=chainlinkPrice||bybitPrice;
+  if(!startPrice||!latestPrice||!candleEndMs)return;
+  const msLeft=candleEndMs-Date.now(),elapsed=300000-msLeft;
+
+  // Lock at 60s elapsed
+  if(elapsed>=60000&&!predLocked){
+    lockedPred=computePrediction();predLocked=true;
+    document.getElementById('pred-card').classList.add('locked');
+    console.log(`🔒 LOCKED: ${lockedPred?.dir} @ ${lockedPred?.conf}%`);
+  }
+
+  // Bet signal
+  const betEl=document.getElementById('bet-signal');
+  if(elapsed>=60000&&msLeft>60000&&lockedPred){
+    const skip=lockedPred.conf<65;
+    betEl.className=skip?'skip':'bet-now';
+    betEl.textContent=skip?`⛔ SKIP — ${lockedPred.conf}% confidence`:`${getBand(lockedPred.conf).action} — ${lockedPred.dir} @ ${lockedPred.conf}%`;
+  } else if(predLocked&&msLeft<=60000&&msLeft>3000){
+    betEl.className='locked';betEl.textContent=`🔒 ${lockedPred.dir} @ ${lockedPred.conf}%`;
+  } else if(msLeft<=15000){
+    betEl.className='closing';betEl.textContent='⚠️ Candle closing soon...';
+  } else {
+    betEl.className='waiting';betEl.textContent=elapsed<30000?'⏳ Gathering signals...':'📊 Analyzing...';
+  }
+
+  // Recheck
+  const rc=document.getElementById('recheck-card');
+  if(msLeft<=60000&&msLeft>3000&&predLocked&&lockedPred?.conf>=65){
+    const r=computeRecheck();
+    if(r){rc.style.display='block';rc.className=r.cls;document.getElementById('recheck-action').textContent=r.label;document.getElementById('recheck-reason').textContent=r.reason;document.getElementById('recheck-timer').textContent=`${Math.ceil(msLeft/1000)}s remaining`;}
+  } else if(msLeft>60000||msLeft<=3000){rc.style.display='none';}
+
+  // Countdown
+  const cdEl=document.getElementById('countdown');
+  if(msLeft<=0){cdEl.textContent='0:00';cdEl.className='urgent';closeCandle();return;}
+  const mins=Math.floor(msLeft/60000),secs=Math.floor(msLeft%60000/1000);
+  cdEl.textContent=`${mins}:${secs.toString().padStart(2,'0')}`;
+  cdEl.className=predLocked?'locked':msLeft<15000?'urgent':'';
+
+  // Prices — use chainlink if available, bybit as fallback (original v6 logic)
+  const diff = latestPrice - startPrice, pct = diff/startPrice*100, sign = diff>=0?'+':'';
+  document.getElementById('cur-p').textContent = fmtP(latestPrice);
+  document.getElementById('cur-p').className = 'card-value '+(diff>0?'up':diff<0?'down':'');
+  const deltaEl = document.getElementById('delta');
+  deltaEl.textContent = `${fmtD(diff)}  (${sign}${pct.toFixed(3)}%)`;
+  deltaEl.style.color = diff>0?'#4fffb0':diff<0?'#ff6b6b':'var(--muted)';
+  // Spread info for reference only
+  const spread = bybitPrice && chainlinkPrice ? Math.abs(bybitPrice - chainlinkPrice) : null;
+  const bybitEl = document.getElementById('bybit-spread');
+  if(bybitEl && spread !== null){
+    bybitEl.textContent = `Bybit $${fmtP(bybitPrice)} · CL $${fmtP(chainlinkPrice)} · Spread $${spread.toFixed(1)}`;
+    bybitEl.style.color = spread > 30 ? '#ffd166' : 'var(--muted)';
+  }
+
+  // Oracle badge
+  if(chainlinkPrice){
+    document.getElementById('oracle-price').textContent=fmtP(chainlinkPrice);
+  }
+
+  // Prediction
+  const pred=lockedPred||computePrediction();
+  if(pred){
+    const pc=document.getElementById('pred-card');
+    pc.className=(predLocked?'locked ':'')+pred.dir.toLowerCase();
+    document.getElementById('pred-dir').textContent=pred.dir==='UP'?'📈 UP':'📉 DOWN';
+    document.getElementById('pred-conf').textContent=`${pred.conf}% Confidence`;
+    renderSignals(pred.breakdown);
+  }
+}
+
+function renderSignals(bd){
+  if(!bd)return;
+  const map={chainlink:'chainlink',cvd:'cvd',prev:'prev',momentum:'momentum'};
+  for(const[key]of Object.entries(map)){
+    const sig=bd[key];if(!sig)continue;
+    const el=document.getElementById('sig-'+key);
+    const bar=document.getElementById('bar-'+key);
+    const card=document.getElementById('sc-'+key);
+    if(!el||!bar)continue;
+    el.textContent=sig.label;el.className='sig-value '+sig.cls;
+    const pct=Math.min((sig.raw||0)*100,100);
+    const col=sig.cls==='bull'?'#4fffb0':sig.cls==='bear'?'#ff6b6b':'#3a4060';
+    if(bar){bar.style.width=pct+'%';bar.style.background=col;}
+    if(card){card.className='sig-card'+(sig.cls==='bull'?' active-bull':sig.cls==='bear'?' active-bear':'');}
+  }
+}
+
+function updatePrevCandle(){
+  if(!prevCandle){document.getElementById('prev-candle-val').textContent='Waiting for first close...';return;}
+  const el=document.getElementById('prev-candle-val');
+  const pct=document.getElementById('prev-candle-pct');
+  const dir=prevCandle.direction==='UP'?'📈 UP':'📉 DOWN';
+  const strong=Math.abs(prevCandle.pctMove)>0.08?'STRONG ':'';
+  el.textContent=`${strong}${dir}`;
+  el.style.color=prevCandle.direction==='UP'?'#4fffb0':'#ff6b6b';
+  pct.textContent=`${prevCandle.pctMove>=0?'+':''}${prevCandle.pctMove.toFixed(3)}%`;
+  pct.style.color=prevCandle.pctMove>=0?'#4fffb0':'#ff6b6b';
+}
+
+// ═══════════════════════════════════════════════════════
+//  PERSISTENCE
+// ═══════════════════════════════════════════════════════
+const STORAGE_KEY='btc_bot_v6_predictions';
+function savePredictions(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(predictions.map(p=>({s:p.startPrice,e:p.endPrice,dir:p.pred?.dir||null,conf:p.pred?.conf||null,actual:p.actual,won:p.won,ts:p.ts||Date.now()}))));}catch(e){}}
+function loadPredictions(){try{const raw=localStorage.getItem(STORAGE_KEY);if(!raw)return[];return JSON.parse(raw).map(p=>({startPrice:p.s,endPrice:p.e,pred:p.dir?{dir:p.dir,conf:p.conf}:null,actual:p.actual,won:p.won,ts:p.ts}));}catch(e){return[];}}
+function clearHistory(){if(!confirm(`Clear all ${predictions.length} candles?`))return;predictions=[];localStorage.removeItem(STORAGE_KEY);updateStats();updateBandTable();}
+
+// ═══════════════════════════════════════════════════════
+//  STATS
+// ═══════════════════════════════════════════════════════
+function updateStats(){
+  // Only count bets we actually take: conf >= 65% (excludes 55-64% skip and <55% hard skip)
+  const allBets = predictions.filter(p=>p.pred&&p.pred.conf>=65);
+  const total=allBets.length, wins=allBets.filter(p=>p.won).length;
+  const losses=total-wins, rate=total?Math.round(wins/total*100):0;
+  // Streak also only on actionable bets
+  let streak=0,sType='';
+  if(allBets.length>0){
+    sType=allBets[allBets.length-1].won?'W':'L';
+    for(let i=allBets.length-1;i>=0;i--){if(allBets[i].won===(sType==='W'))streak++;else break;}
+  }
+  // Total candles watched is all predictions
+  document.getElementById('s-total').textContent=predictions.length;
+  document.getElementById('s-wl').textContent=total?`${wins}W-${losses}L`:'--';
+  document.getElementById('s-rate').textContent=total?rate+'%':'--%';
+  document.getElementById('s-streak').textContent=streak?`${streak}${sType}`:'--';
+}
+function updateBandTable(){
+  document.getElementById('band-rows').innerHTML=BANDS.map(band=>{
+    const inB=predictions.filter(p=>p.pred&&p.pred.conf>=band.min&&p.pred.conf<=band.max);
+    const wins=inB.filter(p=>p.won).length,total=inB.length,rate=total?Math.round(wins/total*100):null;
+    const col=rate>=70?'#4fffb0':rate>=55?'#ffd166':rate!=null?'#ff6b6b':'#3a4060';
+    return`<tr><td style="font-weight:700;color:${band.color}">${band.label}</td><td style="color:#3a4060;font-size:.8em">${band.action}</td><td style="text-align:center;color:var(--text)">${total}</td><td style="text-align:center;color:#3a4060">${total?`${wins}W-${total-wins}L`:'--'}</td><td style="text-align:center;font-weight:700;color:${col}">${rate!=null?rate+'%':'--'}</td><td><div style="height:3px;background:#1a2030;border-radius:2px"><div style="height:100%;width:${rate||0}%;background:${col};border-radius:2px;transition:width .4s"></div></div></td></tr>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════
+//  CHART — dual line: chainlink + bybit
+// ═══════════════════════════════════════════════════════
+function initChart(){
+  chartObj=new Chart(document.getElementById('myChart').getContext('2d'),{
+    type:'line',
+    data:{labels:[],datasets:[
+      {label:'Chainlink',data:[],borderColor:'#4fffb0',backgroundColor:'rgba(79,255,176,.05)',borderWidth:2,tension:.3,fill:true,pointRadius:0},
+      {label:'Bybit',data:[],borderColor:'rgba(79,255,176,.25)',borderWidth:1,tension:.3,fill:false,pointRadius:0,borderDash:[2,4]},
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,animation:false,
+      plugins:{legend:{display:false}},
+      scales:{
+        x:{display:false},
+        y:{ticks:{color:'#3a4060',font:{family:'Verdana',size:10},callback:v=>v.toLocaleString('en-US',{style:'currency',currency:'USD',minimumFractionDigits:0})},grid:{color:'rgba(255,255,255,.03)'}}
+      }
+    }
+  });
+}
+function updateChart(){
+  if(!chartObj)return;
+  const cl=chainlinkHistory.slice(-120);
+  const by=bybitHistory.slice(-120);
+  const len=Math.max(cl.length,by.length);
+  chartObj.data.labels=Array.from({length:len},(_,i)=>i);
+  chartObj.data.datasets[0].data=cl;
+  chartObj.data.datasets[1].data=by;
+  chartObj.update('none');
+}
+
+// ═══════════════════════════════════════════════════════
+//  WATCHDOG + REST FALLBACK
+// ═══════════════════════════════════════════════════════
+let lastBybitUpdate=0, lastChainlinkUpdate=0;
+let restInterval=null, bybitWS=null, pingInterval=null;
+
+function handleBybitPrice(price,bid,bidSz,ask,askSz){
+  if(!price||isNaN(price))return;
+  lastBybitUpdate=Date.now();
+  bybitPrice=price;
+  bybitHistory.push(price);if(bybitHistory.length>500)bybitHistory.shift();
+  if(bid){bestBid=bid;bestBidSize=bidSz||1;}
+  if(ask){bestAsk=ask;bestAskSize=askSz||1;}
+  if(!startPrice)openCandle(chainlinkPrice||price);
+  updateChart();
+  document.getElementById('ws-dot').classList.add('live');
+}
+
+function handleChainlinkPrice(price){
+  if(!price||isNaN(price))return;
+  lastChainlinkUpdate=Date.now();
+  chainlinkPrice=price;
+  chainlinkHistory.push(price);if(chainlinkHistory.length>500)chainlinkHistory.shift();
+  chainlinkCandle.push(price);if(chainlinkCandle.length>300)chainlinkCandle.shift();
+  // Update oracle badge always
+  document.getElementById('oracle-price').textContent=fmtP(price);
+  if(!startPrice&&bybitPrice)openCandle(price);
+  updateChart();
+}
+
+async function restFallback(){
+  try{
+    const r=await fetch('https://api.bybit.com/v5/market/tickers?category=linear&symbol=BTCUSDT');
+    const j=await r.json();
+    const d=j?.result?.list?.[0];
+    if(!d)return;
+    handleBybitPrice(parseFloat(d.lastPrice),parseFloat(d.bid1Price),1,parseFloat(d.ask1Price),1);
+    document.getElementById('ws-status').textContent='⚡ REST fallback active';
+  }catch(e){}
+}
+
+function startRestFallback(){if(!restInterval)restInterval=setInterval(restFallback,3000);}
+function stopRestFallback(){if(restInterval){clearInterval(restInterval);restInterval=null;}}
+
+function startWatchdog(){
+  setInterval(()=>{
+    const bybitStale=Date.now()-lastBybitUpdate>8000;
+    if(bybitStale&&isMaster){
+      startRestFallback();
+      if(bybitWS){try{bybitWS.close();}catch(e){}}
+      setTimeout(connectBybit,500);
+    } else if(!bybitStale){stopRestFallback();}
+  },5000);
+}
+
+// ═══════════════════════════════════════════════════════
+//  BYBIT WEBSOCKET
+// ═══════════════════════════════════════════════════════
+function connectBybit(){
+  if(bybitWS){try{bybitWS.close();}catch(e){}}
+  if(pingInterval){clearInterval(pingInterval);pingInterval=null;}
+  const ws=new WebSocket('wss://stream.bybit.com/v5/public/linear');
+  bybitWS=ws;
+  ws.onopen=()=>{
+    document.getElementById('ws-dot').classList.add('live');
+    document.getElementById('ws-status').textContent='Live · Bybit + Chainlink [MASTER]';
+    ws.send(JSON.stringify({op:'subscribe',args:['tickers.BTCUSDT','orderbook.1.BTCUSDT','publicTrade.BTCUSDT']}));
+    pingInterval=setInterval(()=>{if(ws.readyState===1)ws.send(JSON.stringify({op:'ping'}));},10000);
+  };
+  ws.onmessage=e=>{
+    let msg;try{msg=JSON.parse(e.data);}catch{return;}
+    if(msg.topic==='tickers.BTCUSDT'&&msg.data?.lastPrice){
+      handleBybitPrice(
+        parseFloat(msg.data.lastPrice),
+        msg.data.bid1Price?parseFloat(msg.data.bid1Price):null,
+        msg.data.bid1Size?parseFloat(msg.data.bid1Size):null,
+        msg.data.ask1Price?parseFloat(msg.data.ask1Price):null,
+        msg.data.ask1Size?parseFloat(msg.data.ask1Size):null,
+      );
+    }
+    if(msg.topic==='orderbook.1.BTCUSDT'&&msg.data){
+      const d=msg.data;
+      if(d.b?.length>0){bestBid=parseFloat(d.b[0][0]);bestBidSize=parseFloat(d.b[0][1]);}
+      if(d.a?.length>0){bestAsk=parseFloat(d.a[0][0]);bestAskSize=parseFloat(d.a[0][1]);}
+    }
+    if(msg.topic==='publicTrade.BTCUSDT'&&Array.isArray(msg.data)){
+      for(const t of msg.data){
+        const vol=parseFloat(t.v);
+        // SMART CVD — only count trades > 0.5 BTC
+        if(vol>=0.5){
+          t.S==='Buy'?smartCVD+=vol:smartCVD-=vol;
+        }
+      }
+    }
+  };
+  ws.onerror=()=>{document.getElementById('ws-dot').classList.remove('live');startRestFallback();};
+  ws.onclose=()=>{document.getElementById('ws-dot').classList.remove('live');if(pingInterval){clearInterval(pingInterval);pingInterval=null;}startRestFallback();setTimeout(connectBybit,2000);};
+}
+
+// ═══════════════════════════════════════════════════════
+//  POLYMARKET CHAINLINK ORACLE WEBSOCKET
+// ═══════════════════════════════════════════════════════
+let polyWS=null, polyPing=null, lastPolyUpdate=0;
+
+function connectPolymarketOracle(){
+  if(polyWS){try{polyWS.close();}catch(e){}}
+  if(polyPing){clearInterval(polyPing);polyPing=null;}
+
+  try{
+    const ws=new WebSocket('wss://ws-subscriptions.polymarket.com/ws/');
+    polyWS=ws;
+    ws.onopen=()=>{
+      console.log('🔗 Polymarket Oracle connected');
+      ws.send(JSON.stringify({action:'subscribe',subscriptions:[{topic:'crypto_prices_chainlink',type:'*',filters:'{"symbol":"btc/usd"}'}]}));
+      polyPing=setInterval(()=>{if(ws.readyState===1)ws.send(JSON.stringify({action:'ping'}));},20000);
+    };
+    ws.onmessage=e=>{
+      let msg;try{msg=JSON.parse(e.data);}catch{return;}
+      if(msg.topic==='crypto_prices_chainlink'&&msg.payload?.value){
+        lastPolyUpdate=Date.now();
+        handleChainlinkPrice(parseFloat(msg.payload.value));
+      }
+    };
+    ws.onerror=()=>{
+      console.warn('Polymarket Oracle WS error — using Bybit as chainlink proxy');
+      if(polyPing){clearInterval(polyPing);polyPing=null;}
+    };
+    ws.onclose=()=>{
+      if(polyPing){clearInterval(polyPing);polyPing=null;}
+      setTimeout(connectPolymarketOracle,3000);
+    };
+  }catch(err){
+    console.warn('Cannot connect to Polymarket Oracle, using Bybit price as settlement proxy');
+    // Fallback: use Bybit price as chainlink proxy
+    setInterval(()=>{if(bybitPrice)handleChainlinkPrice(bybitPrice);},1000);
+  }
+
+  // Watchdog: if no chainlink update in 5s, use Bybit as proxy
+  setInterval(()=>{
+    if(Date.now()-lastPolyUpdate>5000&&bybitPrice){
+      handleChainlinkPrice(bybitPrice);
+    }
+  },3000);
+}
+
+// ═══════════════════════════════════════════════════════
+//  BOOT
+// ═══════════════════════════════════════════════════════
+initChart();
+predictions=loadPredictions();
+if(predictions.length>0){updateStats();updateBandTable();}
+updatePrevCandle();
+// Fire REST immediately so we have price before WS handshake completes
+restFallback();
+electMaster();
+startWatchdog();
+setInterval(tick,100);
+</script>
+</body>
+</html>
